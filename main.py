@@ -2,23 +2,45 @@ import asyncio
 from os import environ
 import subprocess
 
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
 from pydantic_ai.models.gemini import GeminiModel
+from pydantic_ai.models.openai import OpenAIModel
 
-GEMINI_API_KEY = (
-    subprocess.run(
-        args=["op", "read", "op://employee/povmeksro7vsc5xhdufg7mpp4q/credential"],
-        capture_output=True,
-    )
-    .stdout.decode("utf-8")
-    .strip()
+from pydantic_ai.providers.openai import OpenAIProvider
+
+
+class Settings(BaseSettings):
+    gemini_api_key: str = Field(default="")
+
+    @field_validator("gemini_api_key", mode="before")
+    @classmethod
+    def get_api_key(cls, v: str) -> str:
+        if v:
+            return v
+
+        result = subprocess.run(
+            args=["op", "read", "op://employee/povmeksro7vsc5xhdufg7mpp4q/credential"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+
+        raise ValueError("GEMINI_API_KEY not found in environment or 1Password")
+
+
+settings = Settings()
+ollama_model = OpenAIModel(
+    model_name="qwen3:32b",
+    provider=OpenAIProvider(base_url="http://localhost:11434/v1"),
 )
-assert GEMINI_API_KEY, "GEMINI_API_KEY environment variable is not set"
-
 model = GeminiModel(
-    "gemini-2.5-pro-preview-05-06", provider=GoogleGLAProvider(api_key=GEMINI_API_KEY)
+    "gemini-2.5-pro-preview-05-06",
+    provider=GoogleGLAProvider(api_key=settings.gemini_api_key),
 )
 
 run_python = MCPServerStdio(
@@ -50,44 +72,34 @@ desktop_commander = MCPServerStdio(
     args=["-y", "@wonderwhy-er/desktop-commander"],
     tool_prefix="desktop_commander",
 )
-# duckdb = MCPServerStdio(
-#     command="uvx",
-#     args=["mcp-server-motherduck", "--db-path", ":memory:"],
-#     tool_prefix="duckdb",
-# )
 context7 = MCPServerStdio(
     command="npx", args=["-y", "@upstash/context7-mcp"], tool_prefix="context"
 )
-puppeteer = MCPServerStdio(
-    command="npx", args=["-y", "puppeteer-mcp-server"], env={}, tool_prefix="env"
-)
+
 python_tools = MCPServerStdio(
     command="uvx", args=["python-tools-mcp"], tool_prefix="Python_Tools"
 )
-audio = MCPServerStdio(
-    command="uv",
-    args=[
-        "run",
-        "--directory=/Users/benomahony/Code/open_source/csm-audio-mcp",
-        "src/server.py",
-    ],
-    env={"UV_PYTHON": "3.12"},
-)
 agent = Agent(
-    model=model,
-    mcp_servers=[
+    model=ollama_model,
+    toolsets=[
         run_python,
-        audio,
         python_tools,
         internet_search,
         code_reasoning,
         jira,
         context7,
         desktop_commander,
-        puppeteer,
-        # duckdb,
     ],
 )
+
+
+@agent.tool_plain()
+def run_tests() -> str:
+    """Run tests using uv."""
+    result = subprocess.run(
+        ["uv", "run", "pytest", "-xvs", "tests/"], capture_output=True, text=True
+    )
+    return result.stdout
 
 
 @agent.tool_plain()
@@ -100,15 +112,8 @@ def commit_message():
 
 
 async def main():
-    try:
-        async with agent.run_mcp_servers():
-            await agent.to_cli()
-
-    except (RuntimeError, asyncio.CancelledError) as e:
-        if "cancel scope" in str(e) or "already running" in str(e):
-            pass
-        else:
-            raise
+    async with agent:
+        await agent.to_cli()
 
 
 if __name__ == "__main__":
