@@ -1,7 +1,7 @@
 import asyncio
 from os import environ
 import subprocess
-
+import logfire
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 from pydantic_ai import Agent
@@ -113,6 +113,11 @@ def commit_message():
 
 async def main():
     async with agent:
+        environ["OTEL_SERVICE_NAME"] = "coding-agent"
+        environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4318"
+        _ = logfire.configure(send_to_logfire=False)
+        logfire.instrument_pydantic_ai()
+        logfire.instrument_httpx(capture_all=True)
         await agent.to_cli()
 
 
