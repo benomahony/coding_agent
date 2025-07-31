@@ -38,7 +38,7 @@ ollama_model = OpenAIModel(
     model_name="qwen3:32b",
     provider=OpenAIProvider(base_url="http://localhost:11434/v1"),
 )
-model = GeminiModel(
+gemini_model = GeminiModel(
     "gemini-2.5-pro-preview-05-06",
     provider=GoogleGLAProvider(api_key=settings.gemini_api_key),
 )
@@ -80,7 +80,7 @@ python_tools = MCPServerStdio(
     command="uvx", args=["python-tools-mcp"], tool_prefix="Python_Tools"
 )
 agent = Agent(
-    model=ollama_model,
+    model=gemini_model,
     toolsets=[
         run_python,
         python_tools,
