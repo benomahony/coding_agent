@@ -76,14 +76,10 @@ context7 = MCPServerStdio(
     command="npx", args=["-y", "@upstash/context7-mcp"], tool_prefix="context"
 )
 
-python_tools = MCPServerStdio(
-    command="uvx", args=["python-tools-mcp"], tool_prefix="Python_Tools"
-)
 agent = Agent(
     model=gemini_model,
     toolsets=[
         run_python,
-        python_tools,
         internet_search,
         code_reasoning,
         jira,
